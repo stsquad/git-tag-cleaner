@@ -22,7 +22,11 @@ import logging
 # Command line options
 #
 parser=ArgumentParser(description='Git Tag Cleaner, a tool for removing old tags')
-parser.add_argument('-v', '--verbose', dest="verbose", action='count')
+
+verbosity = parser.add_mutually_exclusive_group()
+verbosity.add_argument('-v', '--verbose', action='count')
+verbosity.add_argument('-q', '--quiet', action="store_true", help="be very quiet on stdout")
+
 parser.add_argument('-o', '--output', dest="output",default="git-tag-cleaner.log",  help="log file output")
 parser.add_argument('-g', '--git', dest="git", default=None, help="path to git repo (else uses GIT_DIR or cwd)")
 parser.add_argument('-t', '--type', dest="type", default="commit", choices=['commit', 'all'], help="select the tag type")
@@ -34,25 +38,25 @@ parser.add_argument('-r', '--remotes', dest="remotes", default=None, help="push 
 logger = logging.getLogger("git-tag-cleaner")
 
 # A possibly excessive function to setup logging to file and stdout 
-def setup_logging(verbose, out_file):
+def setup_logging(quiet, verbose, out_file):
     # setup logging
+    logger.setLevel(logging.DEBUG)
     lfmt = logging.Formatter('%(asctime)s:%(levelname)s - %(name)s - %(message)s')
-    if verbose>0:
-        if args>1:
-            log_level = logging.DEBUG
-        else:
-            log_level = logging.INFO
-        # if verbose on we also output to stdout
+
+    if verbose:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+
+    # output to stdout
+    if not quiet:
         output = logging.StreamHandler()
         output.setLevel(log_level)
         output.setFormatter(lfmt)
         logger.addHandler(output)
-    else:
-        log_level = logging.WARNING
 
-    logger.setLevel(log_level)
+    # output to file
     file_log = logging.FileHandler(out_file)
-    file_log.setLevel(log_level)
     file_log.setFormatter(lfmt)
     logger.addHandler(file_log)
     
@@ -69,7 +73,7 @@ def get_branches(repo_path, sha1):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    setup_logging(args.verbose, args.output)
+    setup_logging(args.quiet, args.verbose, args.output)
     
     if not args.git:
         if os.environ.has_key('GIT_DIR'):
