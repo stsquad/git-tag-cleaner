@@ -13,22 +13,54 @@
 from argparse import ArgumentParser
 from git import Repo
 from subprocess import check_output, STDOUT
+
+import re
 import os
+import logging
 
 #
 # Command line options
 #
 parser=ArgumentParser(description='Git Tag Cleaner, a tool for removing old tags')
 parser.add_argument('-v', '--verbose', dest="verbose", action='count')
+parser.add_argument('-o', '--output', dest="output",default="git-tag-cleaner.log",  help="log file output")
 parser.add_argument('-g', '--git', dest="git", default=None, help="path to git repo (else uses GIT_DIR or cwd)")
 parser.add_argument('-t', '--type', dest="type", default="commit", choices=['commit', 'all'], help="select the tag type")
+parser.add_argument('-p', '--preserve', dest="preserve", default=None, help="regex of tags to save")
 parser.add_argument('-d', '--delete', dest="delete", default=None, choices=['size', 'no-branch'], help="deletion criteria")
 parser.add_argument('-r', '--remotes', dest="remotes", default=None, help="push tag deletions to remote (dangerous)")
 
+# Logging
+logger = logging.getLogger("git-tag-cleaner")
+
+# A possibly excessive function to setup logging to file and stdout 
+def setup_logging(verbose, out_file):
+    # setup logging
+    lfmt = logging.Formatter('%(asctime)s:%(levelname)s - %(name)s - %(message)s')
+    if verbose>0:
+        if args>1:
+            log_level = logging.DEBUG
+        else:
+            log_level = logging.INFO
+        # if verbose on we also output to stdout
+        output = logging.StreamHandler()
+        output.setLevel(log_level)
+        output.setFormatter(lfmt)
+        logger.addHandler(output)
+    else:
+        log_level = logging.WARNING
+
+    logger.setLevel(log_level)
+    file_log = logging.FileHandler(out_file)
+    file_log.setLevel(log_level)
+    file_log.setFormatter(lfmt)
+    logger.addHandler(file_log)
+    
 
 def get_branches(repo_path, sha1):
     cmd = "git branch -r --contains %s" % (sha1)
     out = check_output(cmd, shell=True, stderr=STDOUT)
+    logger.debug("cmd %s got %s" % (cmd, out))
     if (len(out)==0):
         return []
     else:
@@ -37,13 +69,15 @@ def get_branches(repo_path, sha1):
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    setup_logging(args.verbose, args.output)
+    
     if not args.git:
         if os.environ.has_key('GIT_DIR'):
             args.git = os.environ['GIT_DIR']
         else:
             os.getcwd()
     repo = Repo(args.git)
-    print "have repo=%s" % (repo)
+    logger.info("using repo=%s" % (repo))
     skipped_tags = 0
     interesting_tags = []
     for t in repo.tags:
@@ -52,8 +86,19 @@ if __name__ == "__main__":
         else:
             skipped_tags += 1
 
-    print "Collected %d tags (skipped %d)" % (len(interesting_tags), skipped_tags)
+    # Filter out any tags we don't want touched
+    if args.preserve:
+        logger.info("Removing preserved tags from current list (%d tags)" % (len(interesting_tags)))
+        regex = re.compile(args.preserve)
+        for t in interesting_tags:
+            if regex.match(t.name):
+                logger.debug("Removed %s from the interesting list" % (t.name))
+                interesting_tags.remove(t)
+                skipped_tags += 1
+
+            
     # sort the list based on size, largest fist
+    logger.info("Sorting %d tags (skipped %d)" % (len(interesting_tags), skipped_tags))
     interesting_tags.sort(key=lambda tag: tag.object.size, reverse=True)
 
     # now go through the objects, identifying what we can delete
@@ -61,9 +106,9 @@ if __name__ == "__main__":
         hexsha = t.object.hexsha
         branches = get_branches(args.git, hexsha)
         if (len(branches)==0):
-            print "tag: %s (size = %d) doesn't exist in any branches" % (t.name, t.object.size)
+            logger.info("tag %s (size = %d) doesn't exist in any branches" % (t.name, t.object.size))
             if args.delete == "no-branch":
-                print "deleting tag"
+                logger.warning("deleting tag %s/%s from local repo" % (t.name, hexsha))
                 repo.delete_tag(t)
             
 
