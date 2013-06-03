@@ -85,20 +85,17 @@ if __name__ == "__main__":
     skipped_tags = 0
     interesting_tags = []
     for t in repo.tags:
+        logger.debug("Checking tag %s (points to %s)" % (t.name, t.tag))
         if args.type=="all" or not t.tag:
             interesting_tags.append(t)
         else:
             skipped_tags += 1
 
+    logger.info("Created a list of %d tags (%d skipped)" % (len(interesting_tags), skipped_tags))
     # Filter out any tags we don't want touched
     if args.preserve:
-        logger.info("Removing preserved tags from current list (%d tags)" % (len(interesting_tags)))
         regex = re.compile(args.preserve)
-        for t in interesting_tags:
-            if regex.match(t.name):
-                logger.debug("Removed %s from the interesting list" % (t.name))
-                interesting_tags.remove(t)
-                skipped_tags += 1
+        interesting_tags = [t for t in interesting_tags if not regex.match(t.name)]
 
             
     # sort the list based on size, largest fist
