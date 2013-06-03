@@ -71,17 +71,8 @@ def get_branches(repo_path, sha1):
         branches = out.split("\n")
         return branches
 
-if __name__ == "__main__":
-    args = parser.parse_args()
-    setup_logging(args.quiet, args.verbose, args.output)
-    
-    if not args.git:
-        if os.environ.has_key('GIT_DIR'):
-            args.git = os.environ['GIT_DIR']
-        else:
-            os.getcwd()
-    repo = Repo(args.git)
-    logger.info("using repo=%s" % (repo))
+
+def find_interesting_tags(repo, logger, args):
     skipped_tags = 0
     interesting_tags = []
     for t in repo.tags:
@@ -92,24 +83,60 @@ if __name__ == "__main__":
             skipped_tags += 1
 
     logger.info("Created a list of %d tags (%d skipped)" % (len(interesting_tags), skipped_tags))
+    return skipped_tags, interesting_tags
+
+def should_delete_tag(tag, args):
+    hexsha = tag.object.hexsha
+    branches = get_branches(args.git, hexsha)
+    if len(branches)==0 and args.delete == "no-branch":
+        logger.warning("Deciding to deleting tag %s/%s" % (tag.name, hexsha))
+        return tag
+    else:
+       return None
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+    setup_logging(args.quiet, args.verbose, args.output)
+    
+    if not args.git:
+        if os.environ.has_key('GIT_DIR'):
+            args.git = os.environ['GIT_DIR']
+        else:
+            os.getcwd()
+
+    repo = Repo(args.git)
+    remotes = []
+    if args.remotes:
+        remotes = [repo.remotes[r] for r in args.remotes.split(",") if repo.remotes[r]]
+
+    logger.info("using repo=%s and remotes=%s" % (repo, remotes))
+
+    #
+    # Identify, filter and process the tags until we get a list to delete
+    #
+    
+    skipped_tags, interesting_tags = find_interesting_tags(repo, logger, args)
+
     # Filter out any tags we don't want touched
     if args.preserve:
         regex = re.compile(args.preserve)
         interesting_tags = [t for t in interesting_tags if not regex.match(t.name)]
 
-            
     # sort the list based on size, largest fist
     logger.info("Sorting %d tags (skipped %d)" % (len(interesting_tags), skipped_tags))
     interesting_tags.sort(key=lambda tag: tag.object.size, reverse=True)
 
     # now go through the objects, identifying what we can delete
-    for t in interesting_tags:
-        hexsha = t.object.hexsha
-        branches = get_branches(args.git, hexsha)
-        if (len(branches)==0):
-            logger.info("tag %s (size = %d) doesn't exist in any branches" % (t.name, t.object.size))
-            if args.delete == "no-branch":
-                logger.warning("deleting tag %s/%s from local repo" % (t.name, hexsha))
-                repo.delete_tag(t)
-            
+    tags_to_delete = [t for t in interesting_tags if should_delete_tag(t, args)]
+
+    #
+    # Finally we have a list of tags to delete
+    #
+    for dt in tags_to_delete:
+        logger.warning("Now deleting tag %s" % (dt))
+        repo.delete_tag(dt)
+        for r in remotes:
+            result = r.push(":%s" % (dt.name))
+            if result: logger.debug("Remote %s result = %s" % (r.name, result[0].summary))
+                       
 
