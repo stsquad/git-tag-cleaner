@@ -64,7 +64,7 @@ def setup_logging(quiet, verbose, out_file):
 def get_branches(repo_path, sha1):
     cmd = "git branch -r --contains %s" % (sha1)
     out = check_output(cmd, shell=True, stderr=STDOUT)
-    logger.debug("cmd %s got %s" % (cmd, out))
+#    logger.debug("cmd %s got %s" % (cmd, out))
     if (len(out)==0):
         return []
     else:
