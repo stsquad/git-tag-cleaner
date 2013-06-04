@@ -89,7 +89,6 @@ def should_delete_tag(tag, args):
     hexsha = tag.object.hexsha
     branches = get_branches(args.git, hexsha)
     if len(branches)==0 and args.delete == "no-branch":
-        logger.warning("Deciding to deleting tag %s/%s" % (tag.name, hexsha))
         return tag
     else:
        return None
@@ -127,16 +126,12 @@ if __name__ == "__main__":
     interesting_tags.sort(key=lambda tag: tag.object.size, reverse=True)
 
     # now go through the objects, identifying what we can delete
-    tags_to_delete = [t for t in interesting_tags if should_delete_tag(t, args)]
-
-    #
-    # Finally we have a list of tags to delete
-    #
-    for dt in tags_to_delete:
-        logger.warning("Now deleting tag %s" % (dt))
-        repo.delete_tag(dt)
-        for r in remotes:
-            result = r.push(":%s" % (dt.name))
-            if result: logger.debug("Remote %s result = %s" % (r.name, result[0].summary))
+    for dt in interesting_tags:
+        if should_delete_tag(dt, args):
+            logger.warning("Now deleting tag %s" % (dt))
+            repo.delete_tag(dt)
+            for r in remotes:
+                result = r.push(":%s" % (dt.name))
+                if result: logger.debug("Remote %s result = %s" % (r.name, result[0].summary))
                        
 
